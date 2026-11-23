@@ -21,8 +21,9 @@ CACHED_FEATURES = {0x05: 41, 0x09: 20, 0x20: 64}
 # Wired-only connection commands: acknowledged but never forwarded. Games and Steam send 0x08 02 to a
 # USB DualSense; a Bluetooth controller obeys it by dropping its link.
 SWALLOWED_SET_FEATURES = {0x08}
-# Pairing (0x0A writes a new host + link key), factory and firmware commands: refused outright.
-BLOCKED_SET_FEATURES = {0x0A, 0x0C, 0x21, 0x84, 0x85, 0xA0, 0xE0, *range(0xF0, 0xF8)}
+# Pairing (0x0A writes a new host + link key), USB audio/haptics test commands (0x80/0x81 drop the
+# Bluetooth link), factory and firmware commands: refused outright.
+BLOCKED_SET_FEATURES = {0x0A, 0x0C, 0x21, 0x80, 0x81, 0x84, 0x85, 0xA0, 0xE0, *range(0xF0, 0xF8)}
 STATS_INTERVAL = 30.0
 
 
