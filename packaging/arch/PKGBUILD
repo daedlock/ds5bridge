@@ -1,7 +1,7 @@
 # Maintainer: dlock <hossam.saraya@gmail.com>
 pkgname=ds5bridge-git
 _pkgname=ds5bridge
-pkgver=0.1.0
+pkgver=0.1.0.r0.g2d97ae4
 pkgrel=1
 pkgdesc="Use a Bluetooth DualSense as a wired controller (native PlayStation support in Proton games)"
 arch=(any)
