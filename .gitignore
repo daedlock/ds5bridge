@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+# Raw captures contain the controller's MAC address; keep them local.
+captures/
