@@ -35,8 +35,7 @@ reply, `0x53` set-feature.
 ## Install (Arch Linux)
 
 ```sh
-git clone https://github.com/daedlock/ds5bridge && cd ds5bridge/packaging/arch
-makepkg -si
+yay -S ds5bridge-git        # or any AUR helper; package: https://aur.archlinux.org/packages/ds5bridge-git
 ```
 
 That's it: there is nothing to configure. From then on every Bluetooth DualSense (and DualSense
