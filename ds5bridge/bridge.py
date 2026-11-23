@@ -25,6 +25,8 @@ SWALLOWED_SET_FEATURES = {0x08}
 # Bluetooth link), factory and firmware commands: refused outright.
 BLOCKED_SET_FEATURES = {0x0A, 0x0C, 0x21, 0x80, 0x81, 0x84, 0x85, 0xA0, 0xE0, *range(0xF0, 0xF8)}
 STATS_INTERVAL = 30.0
+# Minimum spacing of output reports sent over Bluetooth (100 Hz).
+OUTPUT_INTERVAL = 0.01
 
 
 class PhysicalGone(Exception):
@@ -75,7 +77,10 @@ class Bridge:
             self.features[report_id] = report
         self.output = reports.OutputTranslator()
         self.dev = uhid.Uhid()
-        self.stats = dict.fromkeys(("in", "in_bad", "out", "get", "set"), 0)
+        self.stats = dict.fromkeys(("in", "in_bad", "out", "out_dup", "out_merged", "get", "set"), 0)
+        self.pending_output: bytes | None = None
+        self.last_output: bytes | None = None
+        self.last_output_time = 0.0
         self.swallowed: set[int] = set()
 
     def start(self) -> None:
@@ -109,17 +114,38 @@ class Bridge:
         self.stats["in"] += 1
 
     def forward_output(self, report: bytes) -> int:
-        bt = self.output.usb_to_bt(report)
-        if bt is None:
+        """Queue an output report; flush_output() sends it (deduplicated, rate-limited)."""
+        if not report or report[0] != reports.USB_OUTPUT_ID:
             log.debug("ignoring output report %s", report[:4].hex())
             return errno.EINVAL
+        if self.pending_output is not None:
+            self.stats["out_merged"] += 1
+        self.pending_output = report
+        self.flush_output()
+        return 0
+
+    def flush_output(self) -> None:
+        # Games in native mode send output state every frame. Over USB that's free; over Bluetooth it
+        # fills bluetoothd's socket buffer and the HID link is dropped. Send only changes, newest
+        # state wins, at most once per OUTPUT_INTERVAL.
+        report = self.pending_output
+        if report is None:
+            return
+        if report == self.last_output:
+            self.pending_output = None
+            self.stats["out_dup"] += 1
+            return
+        if time.monotonic() - self.last_output_time < OUTPUT_INTERVAL:
+            return
+        self.pending_output = None
         try:
-            os.write(self.phys, bt)
+            os.write(self.phys, self.output.usb_to_bt(report))
         except OSError as e:
             log.warning("output report to controller failed: %s", e)
-            return e.errno or errno.EIO
+            return
+        self.last_output = report
+        self.last_output_time = time.monotonic()
         self.stats["out"] += 1
-        return 0
 
     def on_virtual_event(self) -> None:
         try:
@@ -191,11 +217,12 @@ class Bridge:
         poller.register(self.dev.fd, select.EPOLLIN)
         next_stats = time.monotonic() + STATS_INTERVAL
         while not stop:
-            for fd, _ in poller.poll(1.0):
+            for fd, _ in poller.poll(OUTPUT_INTERVAL if self.pending_output is not None else 1.0):
                 if fd == self.phys:
                     self.on_physical_readable()
                 else:
                     self.on_virtual_event()
+            self.flush_output()
             if time.monotonic() >= next_stats:
                 self.log_stats()
                 next_stats += STATS_INTERVAL

@@ -128,3 +128,36 @@ class RealHardware(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OutputRateLimit(unittest.TestCase):
+    """Bridge must not flood Bluetooth: identical reports dropped, newest state wins, <= 100 Hz."""
+
+    def make_bridge(self):
+        import os
+        from ds5bridge import bridge
+        b = bridge.Bridge.__new__(bridge.Bridge)
+        rfd, b.phys = os.pipe()
+        self.addCleanup(os.close, rfd)
+        self.addCleanup(os.close, b.phys)
+        b.output = reports.OutputTranslator()
+        b.stats = dict.fromkeys(("out", "out_dup", "out_merged"), 0)
+        b.pending_output = b.last_output = None
+        b.last_output_time = 0.0
+        return b, rfd
+
+    def test_duplicates_and_bursts_are_coalesced(self):
+        import os
+        import time
+        from ds5bridge import bridge
+        b, rfd = self.make_bridge()
+        state = lambda n: bytes([reports.USB_OUTPUT_ID, n]) + bytes(46)
+        for n in (1, 1, 2, 3):  # same frame twice, then a burst inside one interval
+            b.forward_output(state(n))
+        time.sleep(bridge.OUTPUT_INTERVAL * 1.5)
+        b.flush_output()
+        b.forward_output(state(3))  # unchanged state is never resent
+        sent = os.read(rfd, 4096)
+        self.assertEqual(len(sent), 2 * reports.BT_OUTPUT_SIZE)
+        self.assertEqual([sent[3], sent[reports.BT_OUTPUT_SIZE + 3]], [1, 3])
+        self.assertEqual(b.stats["out"], 2)
