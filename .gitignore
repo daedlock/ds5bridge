@@ -2,3 +2,9 @@ __pycache__/
 *.pyc
 # Raw captures contain the controller's MAC address; keep them local.
 captures/
+packaging/arch/*
+!packaging/arch/PKGBUILD
+!packaging/arch/ds5bridge.install
+dist/
+build/
+*.egg-info/

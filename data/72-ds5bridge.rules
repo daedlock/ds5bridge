@@ -1,0 +1,17 @@
+# ds5bridge: present a Bluetooth DualSense as a wired (USB) one.
+# The physical Bluetooth controller is hidden from users from the moment it appears (only the bridge
+# reads it) and the bridge is started for it. `ds5bridge disable` creates /etc/ds5bridge/disabled;
+# /run/ds5bridge/bypass is created if the bridge fails, giving the controller back to users.
+# Numbered after 70-uaccess.rules so TAG-="uaccess" can undo the session ACL.
+
+ACTION=="remove", GOTO="ds5bridge_end"
+KERNELS!="0005:054C:0CE6.*|0005:054C:0DF2.*", GOTO="ds5bridge_end"
+TEST=="/etc/ds5bridge/disabled", GOTO="ds5bridge_end"
+
+SUBSYSTEM=="hidraw", TAG+="systemd", ENV{SYSTEMD_WANTS}+="ds5bridge@%k.service"
+
+TEST=="/run/ds5bridge/bypass", GOTO="ds5bridge_end"
+SUBSYSTEM=="hidraw", MODE="0600", GROUP="root", TAG-="uaccess"
+SUBSYSTEM=="input", MODE="0600", GROUP="root", TAG-="uaccess", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+
+LABEL="ds5bridge_end"

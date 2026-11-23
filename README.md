@@ -32,19 +32,38 @@ DualSense ─Bluetooth─▶ hidraw ─▶ ds5bridge ─▶ /dev/uhid ─▶ "US
 Bluetooth CRC seeds are the HID transaction header: `0xA1` input, `0xA2` output, `0xA3` feature
 reply, `0x53` set-feature.
 
-## Install
+## Install (Arch Linux)
 
 ```sh
-sudo ./install.sh
+git clone https://github.com/daedlock/ds5bridge && cd ds5bridge/packaging/arch
+makepkg -si
 ```
 
-The bridge then starts automatically whenever a DualSense (or DualSense Edge) connects over
-Bluetooth, and stops when it disconnects. If the bridge fails, the physical controller is handed
-back to users (`/run/ds5bridge/bypass`) so it keeps working without the bridge.
+That's it: there is nothing to configure. From then on every Bluetooth DualSense (and DualSense
+Edge) is bridged automatically when it connects; updates restart the bridge and removing the package
+(`sudo pacman -R ds5bridge-git`) hands controllers straight back to apps.
 
-- Turn the bridge off without uninstalling: `sudo rm /etc/ds5bridge/enabled` and reconnect the controller.
-- Uninstall: `sudo ./uninstall.sh`
-- Logs: `journalctl -u 'ds5bridge@*'`
+```sh
+ds5bridge status          # connected controllers and bridge state
+sudo ds5bridge disable    # stop bridging (controllers go back to normal)
+sudo ds5bridge enable     # turn it back on
+journalctl -u 'ds5bridge@*'
+```
+
+If the bridge ever fails, the controller is handed back to apps automatically so it keeps working.
+
+The package also ships a fix for a Proton bug that makes Steam Input's virtual gamepad show up twice
+(a dead copy in XInput slot 0 makes games ignore the controller): see
+`data/72-steam-virtual-gamepad-no-js.rules`.
+
+### Files
+
+| Path | Purpose |
+|---|---|
+| `/usr/bin/ds5bridge` | CLI and bridge |
+| `/usr/lib/udev/rules.d/72-ds5bridge.rules` | hide the Bluetooth original, start the bridge on connect |
+| `/usr/lib/udev/rules.d/72-steam-virtual-gamepad-no-js.rules` | Proton duplicate-controller fix |
+| `/usr/lib/systemd/system/ds5bridge@.service` | one bridge per connected controller |
 
 ## Steam Input
 
@@ -65,7 +84,7 @@ back to users (`/run/ds5bridge/bypass`) so it keeps working without the bridge.
 ```sh
 python3 -m unittest discover -s tests   # translation tests (plus real-hardware checks if captures/ exists)
 tools/capture.py --bus bluetooth        # dump descriptor, feature and input reports of a connected pad
-sudo PYTHONPATH=. python3 -m ds5bridge -v --hide-physical   # run in the foreground
+sudo PYTHONPATH=. python3 -m ds5bridge run -v --hide-physical   # run in the foreground
 ```
 
 Standard library only; Python 3.10+.

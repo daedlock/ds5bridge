@@ -1,7 +1,0 @@
-#!/bin/sh
-# ExecStopPost: if the bridge failed, hand the physical controller back to users so it still works.
-[ "$SERVICE_RESULT" = success ] && exit 0
-mkdir -p /run/ds5bridge && touch /run/ds5bridge/bypass
-node=$(basename "$1")
-[ -e "/sys/class/hidraw/$node" ] || exit 0
-udevadm trigger --action=change --parent-match="$(readlink -f "/sys/class/hidraw/$node/device")"

@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ds5bridge"
+version = "0.1.0"
+description = "Use a Bluetooth DualSense on Linux as if it were plugged in over USB"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+
+[project.urls]
+Homepage = "https://github.com/daedlock/ds5bridge"
+
+[project.scripts]
+ds5bridge = "ds5bridge.__main__:main"
+
+[tool.setuptools]
+packages = ["ds5bridge"]

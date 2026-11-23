@@ -1,0 +1,6 @@
+# Hide the legacy joystick (joydev) node of Steam Input's virtual gamepad (28de:11ff).
+# Proton's winebus opens /dev/input/jsN of the virtual pad as if it were an evdev node,
+# which creates a dead duplicate controller that takes XInput slot 0, so games ignore
+# the real input (e.g. Lies of P "press A" never registers). Games keep using the
+# working /dev/input/eventN node of the same pad. Delete this file to undo.
+SUBSYSTEM=="input", KERNEL=="js[0-9]*", ATTRS{id/vendor}=="28de", ATTRS{id/product}=="11ff", MODE="0000", TAG-="uaccess"
