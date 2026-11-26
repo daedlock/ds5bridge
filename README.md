@@ -46,8 +46,12 @@ Edge) is bridged automatically when it connects; updates restart the bridge and 
 ds5bridge status          # connected controllers and bridge state
 sudo ds5bridge disable    # stop bridging (controllers go back to normal)
 sudo ds5bridge enable     # turn it back on
+sudo ds5bridge idle-timeout 10   # minutes without input before the controller turns off (0 = never)
 journalctl -u 'ds5bridge@*'
 ```
+
+Like on a PS5, a controller left alone turns off after 5 minutes without input (buttons, sticks,
+triggers, touchpad), so it doesn't drain its battery overnight. Press PS to wake it.
 
 If the bridge ever fails, the controller is handed back to apps automatically so it keeps working.
 

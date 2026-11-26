@@ -88,3 +88,23 @@ def spoof_pairing_mac(report: bytes) -> bytes:
     patched = bytearray(report)
     patched[6] ^= 0x02
     return bytes(patched)
+
+
+# Offsets in a USB input report (report ID at 0).
+STICKS_AND_TRIGGERS = slice(1, 7)
+BUTTONS = slice(8, 12)
+TOUCH_CONTACTS = (33, 37)  # bit 7 set: no finger on the touchpad
+IDLE_DEADZONE = 24
+
+
+def player_active(reference: bytes, report: bytes) -> bool:
+    """Whether a USB input report shows the controller in use compared with `reference`.
+
+    A button change, a finger on the touchpad, or a stick or trigger moved past a deadzone counts.
+    Motion sensors don't: a controller lying on a table never reads perfectly still.
+    """
+    if report[BUTTONS] != reference[BUTTONS]:
+        return True
+    if any(not report[i] & 0x80 for i in TOUCH_CONTACTS):
+        return True
+    return any(abs(a - b) > IDLE_DEADZONE for a, b in zip(report[STICKS_AND_TRIGGERS], reference[STICKS_AND_TRIGGERS]))

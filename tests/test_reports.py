@@ -126,10 +126,6 @@ class RealHardware(unittest.TestCase):
         self.assertEqual(descriptor.USB_REPORT_DESCRIPTOR, bytes.fromhex(self.usb["report_descriptor"]))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class OutputRateLimit(unittest.TestCase):
     """Bridge must not flood Bluetooth: identical reports dropped, newest state wins, <= 100 Hz."""
 
@@ -161,3 +157,67 @@ class OutputRateLimit(unittest.TestCase):
         self.assertEqual(len(sent), 2 * reports.BT_OUTPUT_SIZE)
         self.assertEqual([sent[3], sent[reports.BT_OUTPUT_SIZE + 3]], [1, 3])
         self.assertEqual(b.stats["out"], 2)
+
+
+def make_usb_input(sticks=(128, 128, 128, 128, 0, 0), buttons=b"\x08\x00\x00\x00", touching=False) -> bytes:
+    report = bytearray(reports.USB_INPUT_SIZE)
+    report[0] = reports.USB_INPUT_ID
+    report[reports.STICKS_AND_TRIGGERS] = bytes(sticks)
+    report[reports.BUTTONS] = buttons
+    for i in reports.TOUCH_CONTACTS:
+        report[i] = 0x00 if touching else 0x80
+    return bytes(report)
+
+
+class PlayerActivity(unittest.TestCase):
+    def test_resting_controller_is_idle(self):
+        rest = make_usb_input()
+        drift = make_usb_input(sticks=(130, 125, 128, 140, 3, 0))
+        self.assertFalse(reports.player_active(rest, drift))
+
+    def test_buttons_sticks_triggers_and_touch_are_activity(self):
+        rest = make_usb_input()
+        self.assertTrue(reports.player_active(rest, make_usb_input(buttons=b"\x28\x00\x00\x00")))  # cross
+        self.assertTrue(reports.player_active(rest, make_usb_input(sticks=(128, 30, 128, 128, 0, 0))))
+        self.assertTrue(reports.player_active(rest, make_usb_input(sticks=(128, 128, 128, 128, 0, 200))))
+        self.assertTrue(reports.player_active(rest, make_usb_input(touching=True)))
+
+
+class IdlePowerOff(unittest.TestCase):
+    def make_bridge(self, timeout):
+        from ds5bridge import bridge
+        b = bridge.Bridge.__new__(bridge.Bridge)
+        b.idle_timeout = timeout
+        b.info = type("Info", (), {"uniq": "12:34:56:78:9a:bc"})()
+        b.last_activity = 0.0
+        return b
+
+    def test_turns_off_after_timeout_and_retries_if_bluez_fails(self):
+        from unittest import mock
+        from ds5bridge import bridge
+        b = self.make_bridge(300)
+        with mock.patch.object(bridge.time, "monotonic", return_value=299.0), \
+                mock.patch.object(bridge, "power_off", return_value=True) as off:
+            self.assertFalse(b.idle_expired())
+            off.assert_not_called()
+        with mock.patch.object(bridge.time, "monotonic", return_value=300.0), \
+                mock.patch.object(bridge, "power_off", return_value=False):
+            self.assertFalse(b.idle_expired())
+            self.assertEqual(b.last_activity, 300.0)
+        with mock.patch.object(bridge.time, "monotonic", return_value=600.0), \
+                mock.patch.object(bridge, "power_off", return_value=True) as off:
+            self.assertTrue(b.idle_expired())
+            off.assert_called_once_with("12:34:56:78:9a:bc")
+
+    def test_zero_timeout_never_turns_off(self):
+        from unittest import mock
+        from ds5bridge import bridge
+        b = self.make_bridge(0)
+        with mock.patch.object(bridge.time, "monotonic", return_value=1e9), \
+                mock.patch.object(bridge, "power_off") as off:
+            self.assertFalse(b.idle_expired())
+            off.assert_not_called()
+
+
+if __name__ == "__main__":
+    unittest.main()

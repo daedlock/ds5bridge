@@ -8,6 +8,8 @@ from dataclasses import dataclass
 HID_DEVICES = pathlib.Path("/sys/bus/hid/devices")
 DISABLED_FLAG = pathlib.Path("/etc/ds5bridge/disabled")  # managed by `ds5bridge disable/enable`
 BYPASS_FLAG = pathlib.Path("/run/ds5bridge/bypass")  # set when the bridge fails
+IDLE_TIMEOUT_FILE = pathlib.Path("/etc/ds5bridge/idle-timeout")  # managed by `ds5bridge idle-timeout`
+DEFAULT_IDLE_MINUTES = 5
 PHYSICAL_GLOBS = ("0005:054C:0CE6.*", "0005:054C:0DF2.*")  # Bluetooth DualSense / DualSense Edge
 VIRTUAL_PHYS_PREFIX = "ds5bridge/"
 
@@ -80,6 +82,25 @@ def set_enabled(enabled: bool) -> None:
         DISABLED_FLAG.touch()
         subprocess.run(["systemctl", "stop", "ds5bridge@*.service"], check=False)
         retrigger("change")
+
+
+def idle_minutes() -> int:
+    try:
+        return max(0, int(IDLE_TIMEOUT_FILE.read_text()))
+    except (OSError, ValueError):
+        return DEFAULT_IDLE_MINUTES
+
+
+def set_idle_minutes(minutes: int) -> None:
+    if minutes == DEFAULT_IDLE_MINUTES:
+        IDLE_TIMEOUT_FILE.unlink(missing_ok=True)
+        try:
+            IDLE_TIMEOUT_FILE.parent.rmdir()
+        except OSError:
+            pass
+        return
+    IDLE_TIMEOUT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    IDLE_TIMEOUT_FILE.write_text(f"{minutes}\n")
 
 
 def hand_back(hidraw_node: str) -> None:

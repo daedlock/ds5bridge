@@ -33,6 +33,21 @@ class PhysicalGone(Exception):
     pass
 
 
+def power_off(mac: str) -> bool:
+    """Drop the controller's Bluetooth link through BlueZ; a DualSense powers off when the host does."""
+    suffix = "/dev_" + mac.upper().replace(":", "_")
+    tree = subprocess.run(["busctl", "tree", "--list", "org.bluez"], capture_output=True, text=True, check=False)
+    path = next((p for p in tree.stdout.split() if p.endswith(suffix)), None)
+    if path is None:
+        log.warning("controller %s not found in BlueZ, can't turn it off", mac)
+        return False
+    done = subprocess.run(["busctl", "call", "org.bluez", path, "org.bluez.Device1", "Disconnect"],
+                          capture_output=True, text=True, check=False)
+    if done.returncode != 0:
+        log.warning("turning the controller off failed: %s", done.stderr.strip())
+    return done.returncode == 0
+
+
 def physical_device_nodes(hidraw_node: str) -> list[str]:
     """The hidraw node plus every /dev/input node the kernel created for the same HID device."""
     hid_dev = (pathlib.Path("/sys/class/hidraw") / pathlib.Path(hidraw_node).name / "device").resolve()
@@ -62,8 +77,11 @@ def restore_nodes(nodes: list[str]) -> None:
 
 
 class Bridge:
-    def __init__(self, node: str) -> None:
+    def __init__(self, node: str, idle_timeout: float = 0) -> None:
         self.node = node
+        self.idle_timeout = idle_timeout
+        self.idle_reference: bytes | None = None
+        self.last_activity = time.monotonic()
         self.phys = os.open(node, os.O_RDWR | os.O_NONBLOCK | os.O_CLOEXEC)
         self.info = hidraw.get_info(self.phys, node)
         if (self.info.bus != hidraw.BUS_BLUETOOTH or self.info.vendor != hidraw.SONY_VID
@@ -112,6 +130,20 @@ class Bridge:
             return
         self.dev.input(usb)
         self.stats["in"] += 1
+        if self.idle_reference is None or reports.player_active(self.idle_reference, usb):
+            self.idle_reference = usb
+            self.last_activity = time.monotonic()
+
+    def idle_expired(self) -> bool:
+        # Nothing on a PC turns a Bluetooth DualSense off (a PS5 does after a few idle minutes), so
+        # left alone it stays on until the battery is empty.
+        if not self.idle_timeout or time.monotonic() - self.last_activity < self.idle_timeout:
+            return False
+        log.info("no input for %d min, turning the controller off", round(self.idle_timeout / 60))
+        if power_off(self.info.uniq):
+            return True
+        self.last_activity = time.monotonic()
+        return False
 
     def forward_output(self, report: bytes) -> int:
         """Queue an output report; flush_output() sends it (deduplicated, rate-limited)."""
@@ -223,17 +255,19 @@ class Bridge:
                 else:
                     self.on_virtual_event()
             self.flush_output()
+            if self.idle_expired():
+                break
             if time.monotonic() >= next_stats:
                 self.log_stats()
                 next_stats += STATS_INTERVAL
         poller.close()
 
 
-def run(node: str, hide_physical: bool = False) -> int:
+def run(node: str, hide_physical: bool = False, idle_timeout: float = 0) -> int:
     stop: list = []
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stop.append(True))
-    bridge = Bridge(node)
+    bridge = Bridge(node, idle_timeout)
     hidden = physical_device_nodes(node) if hide_physical else []
     try:
         bridge.start()
